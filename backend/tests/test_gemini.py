@@ -15,7 +15,7 @@ def gemini_provider(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-fake-key")
     from app.core.config import settings
     settings.GEMINI_API_KEY = "test-fake-key"
-    return GeminiProvider(timeout_seconds=1.0)
+    return GeminiProvider(timeout_seconds=1.0, api_key="test-fake-key")
 
 @pytest.fixture
 def basic_request():

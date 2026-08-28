@@ -12,8 +12,14 @@ class MockProvider(ProviderBase):
     """
     A mock provider that always returns a successful predefined response.
     """
-    def __init__(self, supported_models: Optional[List[str]] = None):
-        self._supported_models = supported_models or ["mock-gpt", "mock-claude"]
+    def __init__(self, timeout_seconds: float = 30.0, supported_models: Optional[List[str]] = None, api_key: Optional[str] = None):
+        self.timeout = timeout_seconds
+        self.api_key = api_key
+        # Use provided models or default, but don't override if provided
+        if supported_models is not None:
+            self._supported_models = supported_models
+        else:
+            self._supported_models = ["mock-gpt", "mock-claude"]
         
     def get_supported_models(self) -> List[str]:
         return self._supported_models

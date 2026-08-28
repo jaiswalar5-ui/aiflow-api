@@ -1,5 +1,6 @@
 import pytest
 from app.providers.registry import ProviderRegistry
+from app.providers.config_registry import ConfigurableProviderRegistry
 from app.providers.mock import MockProvider, MockFailingProvider
 from app.providers.errors import ProviderRateLimitError, ProviderUnsupportedModelError
 from app.models.chat import ChatCompletionRequest, ChatMessage
@@ -8,6 +9,10 @@ from app.services.router import RoutingEngine
 @pytest.fixture
 def empty_registry():
     return ProviderRegistry()
+
+@pytest.fixture
+def empty_config_registry():
+    return ConfigurableProviderRegistry()
 
 @pytest.fixture
 def mock_request():
@@ -25,6 +30,16 @@ def test_provider_registry(empty_registry):
     
     with pytest.raises(KeyError):
         empty_registry.get_provider("nonexistent")
+
+def test_config_registry(empty_config_registry):
+    mock = MockProvider()
+    empty_config_registry.register_provider("mock", mock)
+    
+    assert empty_config_registry.list_providers() == ["mock"]
+    assert empty_config_registry.get_provider("mock") == mock
+    
+    with pytest.raises(KeyError):
+        empty_config_registry.get_provider("nonexistent")
 
 @pytest.mark.asyncio
 async def test_mock_provider_success(mock_request):
@@ -44,23 +59,20 @@ async def test_mock_failing_provider(mock_request):
         await provider.send_chat_completion(mock_request)
 
 @pytest.mark.asyncio
-async def test_routing_engine_success(mock_request):
-    from app.providers.registry import provider_registry
+async def test_routing_engine_success(mock_request, empty_config_registry):
+    # Register with configurable registry
+    empty_config_registry.register_provider("success_mock", MockProvider())
     
-    # Register globally for the routing engine
-    provider_registry.register_provider("success_mock", MockProvider())
-    
-    engine = RoutingEngine()
+    engine = RoutingEngine(registry=empty_config_registry)
     response = await engine.route_chat_completion(mock_request, target_provider="success_mock")
     
     assert response.choices[0].message.content == "This is a mock provider response."
 
 @pytest.mark.asyncio
-async def test_routing_engine_unsupported_model():
-    from app.providers.registry import provider_registry
-    provider_registry.register_provider("mock", MockProvider())
+async def test_routing_engine_unsupported_model(empty_config_registry):
+    empty_config_registry.register_provider("mock", MockProvider())
     
-    engine = RoutingEngine()
+    engine = RoutingEngine(registry=empty_config_registry)
     req = ChatCompletionRequest(model="unsupported-model", messages=[ChatMessage(role="user", content="Hi")])
     
     with pytest.raises(ProviderUnsupportedModelError):

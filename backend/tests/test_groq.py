@@ -15,7 +15,7 @@ def groq_provider(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test-fake-key")
     from app.core.config import settings
     settings.GROQ_API_KEY = "gsk_test-fake-key"
-    return GroqProvider(timeout_seconds=1.0)
+    return GroqProvider(timeout_seconds=1.0, api_key="gsk_test-fake-key")
 
 @pytest.fixture
 def basic_request():

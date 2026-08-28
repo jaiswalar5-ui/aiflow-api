@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     GEMINI_API_KEY: str | None = None
     GROQ_API_KEY: str | None = None
+    PROVIDER_CONFIG_PATH: str | None = None
+    ENABLE_HOT_RELOAD: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env", 

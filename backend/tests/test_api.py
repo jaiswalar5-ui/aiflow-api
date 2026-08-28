@@ -31,12 +31,7 @@ def test_invalid_api_key():
     assert response.json()["detail"] == "Invalid API Key"
 
 def test_valid_chat_request(api_key):
-    from app.providers.registry import provider_registry
-    from app.providers.mock import MockProvider
-    
-    # Register mock provider and use its model
-    provider_registry.register_provider("mock", MockProvider())
-    
+    # The mock provider should already be registered by conftest setup
     response = client.post(
         f"{settings.API_V1_STR}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}"},
@@ -80,7 +75,7 @@ def test_rate_limit(api_key):
         res1 = client.post(
             f"{settings.API_V1_STR}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"messages": [{"role": "user", "content": "Hello"}]}
+            json={"model": "mock-gpt", "messages": [{"role": "user", "content": "Hello"}]}
         )
         assert res1.status_code == 200
         
@@ -88,7 +83,7 @@ def test_rate_limit(api_key):
         res2 = client.post(
             f"{settings.API_V1_STR}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"messages": [{"role": "user", "content": "Hello"}]}
+            json={"model": "mock-gpt", "messages": [{"role": "user", "content": "Hello"}]}
         )
         assert res2.status_code == 200
         
@@ -96,7 +91,7 @@ def test_rate_limit(api_key):
         res3 = client.post(
             f"{settings.API_V1_STR}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"messages": [{"role": "user", "content": "Hello"}]}
+            json={"model": "mock-gpt", "messages": [{"role": "user", "content": "Hello"}]}
         )
         assert res3.status_code == 429
         assert res3.json()["detail"] == "Rate limit exceeded"

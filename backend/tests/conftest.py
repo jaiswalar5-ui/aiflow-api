@@ -31,6 +31,61 @@ def setup_db():
     yield
     Base.metadata.drop_all(bind=test_engine)
 
+@pytest.fixture(scope="module", autouse=True)
+def setup_providers():
+    """Initialize config-driven provider registry for tests."""
+    from app.providers.config_registry import configurable_registry
+    import tempfile
+    import yaml
+    import os
+    
+    # Create a test config with mock provider
+    test_config = {
+        "providers": [
+            {
+                "name": "mock",
+                "adapter_type": "app.providers.mock.MockProvider",
+                "enabled": True,
+                "supported_models": ["mock-gpt", "mock-claude"],
+                "priority": 100,
+                "timeout_seconds": 30.0,
+                "retry_policy": {
+                    "max_attempts": 1,
+                    "backoff_factor": 1.0,
+                    "initial_delay": 0.5,
+                    "retryable_errors": []
+                },
+                "health_check_settings": {
+                    "enabled": False,
+                    "interval_seconds": 30,
+                    "timeout_seconds": 2.0,
+                    "unhealthy_threshold": 2,
+                    "healthy_threshold": 1
+                },
+                "routing_weight": 1.0,
+                "capabilities": {
+                    "streaming": False,
+                    "function_calling": False,
+                    "vision": False,
+                    "parallel_requests": True
+                },
+                "env_var_prefix": None
+            }
+        ]
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(test_config, f)
+        temp_config_path = f.name
+    
+    try:
+        configurable_registry.initialize_from_config(temp_config_path)
+        yield
+    finally:
+        os.unlink(temp_config_path)
+        configurable_registry._providers.clear()
+        configurable_registry._configs.clear()
+
 @pytest.fixture
 def api_key():
     db = TestingSessionLocal()

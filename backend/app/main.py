@@ -15,26 +15,31 @@ async def lifespan(app: FastAPI):
     setup_logging(settings.LOG_LEVEL)
     logger.info("Starting up AIFlow backend...")
     
-    # Initialize Providers
-    from app.providers.registry import provider_registry
-    from app.providers.gemini import GeminiProvider
-    from app.providers.groq import GroqProvider
+    # Initialize Providers from config
+    from app.providers.config_registry import configurable_registry
     
-    if settings.GEMINI_API_KEY:
-        logger.info("Registering GeminiProvider")
-        provider_registry.register_provider("gemini", GeminiProvider())
-    else:
-        logger.warning("GEMINI_API_KEY not set. GeminiProvider will not be registered.")
+    try:
+        config_path = settings.PROVIDER_CONFIG_PATH if hasattr(settings, 'PROVIDER_CONFIG_PATH') else None
+        configurable_registry.initialize_from_config(config_path)
+        logger.info(f"Initialized {len(configurable_registry.list_providers())} providers from config")
         
-    if settings.GROQ_API_KEY:
-        logger.info("Registering GroqProvider")
-        provider_registry.register_provider("groq", GroqProvider())
-    else:
-        logger.warning("GROQ_API_KEY not set. GroqProvider will not be registered.")
+        # Start hot-reload watcher if enabled
+        if settings.ENABLE_HOT_RELOAD if hasattr(settings, 'ENABLE_HOT_RELOAD') else True:
+            await configurable_registry.start_hot_reload()
+            logger.info("Hot-reload enabled for provider configuration")
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize provider registry: {e}")
+        # Continue with empty registry - will be caught at runtime
         
     yield
     # Shutdown
     logger.info("Shutting down AIFlow backend...")
+    
+    # Stop hot-reload watcher
+    from app.providers.config_registry import configurable_registry
+    await configurable_registry.stop_hot_reload()
+    
     # Close connections here
 
 app = FastAPI(

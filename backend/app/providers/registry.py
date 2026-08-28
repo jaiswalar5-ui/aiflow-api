@@ -3,7 +3,9 @@ from app.providers.base import ProviderBase
 
 class ProviderRegistry:
     """
-    Registry for managing available AI provider instances.
+    Legacy registry for managing available AI provider instances.
+    This is maintained for backward compatibility.
+    New code should use ConfigurableProviderRegistry from config_registry.
     """
     def __init__(self):
         self._providers: Dict[str, ProviderBase] = {}
@@ -22,5 +24,5 @@ class ProviderRegistry:
         """Return a list of all registered provider names."""
         return list(self._providers.keys())
 
-# Global registry instance
+# Global registry instance (legacy)
 provider_registry = ProviderRegistry()

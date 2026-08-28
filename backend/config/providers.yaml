@@ -1,0 +1,99 @@
+# Provider Registry Configuration
+# This file defines all available AI providers and their configurations.
+# 
+# IMPORTANT: API keys and secrets should NEVER be stored in this file.
+# Use environment variables with the prefix specified in env_var_prefix.
+# For example, if env_var_prefix is "GEMINI", set GEMINI_API_KEY in your environment.
+
+providers:
+  - name: gemini
+    adapter_type: app.providers.gemini.GeminiProvider
+    enabled: true
+    supported_models:
+      - gemini-1.5-flash
+      - gemini-1.5-pro
+      - gemini-1.0-pro
+    priority: 100
+    timeout_seconds: 30.0
+    retry_policy:
+      max_attempts: 3
+      backoff_factor: 2.0
+      initial_delay: 1.0
+      retryable_errors:
+        - rate_limit_error
+        - timeout_error
+        - server_error
+        - network_error
+    health_check_settings:
+      enabled: true
+      interval_seconds: 60
+      timeout_seconds: 5.0
+      unhealthy_threshold: 3
+      healthy_threshold: 1
+    routing_weight: 1.0
+    capabilities:
+      streaming: true
+      function_calling: true
+      vision: true
+      parallel_requests: true
+    env_var_prefix: GEMINI
+
+  - name: groq
+    adapter_type: app.providers.groq.GroqProvider
+    enabled: true
+    supported_models:
+      - llama-3.3-70b-versatile
+      - llama-3.1-8b-instant
+      - mixtral-8x7b-32768
+    priority: 90
+    timeout_seconds: 30.0
+    retry_policy:
+      max_attempts: 3
+      backoff_factor: 2.0
+      initial_delay: 1.0
+      retryable_errors:
+        - rate_limit_error
+        - timeout_error
+        - server_error
+        - network_error
+    health_check_settings:
+      enabled: true
+      interval_seconds: 60
+      timeout_seconds: 5.0
+      unhealthy_threshold: 3
+      healthy_threshold: 1
+    routing_weight: 1.0
+    capabilities:
+      streaming: true
+      function_calling: true
+      vision: false
+      parallel_requests: true
+    env_var_prefix: GROQ
+
+  - name: mock
+    adapter_type: app.providers.mock.MockProvider
+    enabled: true
+    supported_models:
+      - mock-gpt-4
+      - mock-gpt-3.5-turbo
+      - mock-claude-3
+    priority: 1
+    timeout_seconds: 5.0
+    retry_policy:
+      max_attempts: 1
+      backoff_factor: 1.0
+      initial_delay: 0.5
+      retryable_errors: []
+    health_check_settings:
+      enabled: false
+      interval_seconds: 30
+      timeout_seconds: 2.0
+      unhealthy_threshold: 2
+      healthy_threshold: 1
+    routing_weight: 0.1
+    capabilities:
+      streaming: false
+      function_calling: false
+      vision: false
+      parallel_requests: true
+    env_var_prefix: null
