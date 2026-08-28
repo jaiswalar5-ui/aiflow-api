@@ -19,14 +19,23 @@ class ChatChoice(BaseModel):
     finish_reason: str
 
 class ChatCompletionUsage(BaseModel):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+
+class ResponseMetadata(BaseModel):
+    provider_name: str
+    provider_model: str
+    request_id: Optional[str] = None
+    fallback_used: Optional[bool] = False
+    cache_hit: Optional[bool] = False
 
 class ChatCompletionResponse(BaseModel):
     id: str
     object: str = "chat.completion"
     created: int
     model: str
+    provider: str
     choices: List[ChatChoice]
-    usage: ChatCompletionUsage
+    usage: Optional[ChatCompletionUsage] = None
+    metadata: ResponseMetadata

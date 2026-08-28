@@ -102,12 +102,18 @@ class GeminiProvider(ProviderBase):
             total_tokens=usage_meta.get("totalTokenCount", 0),
         )
         
+        from app.models.chat import ResponseMetadata
         return ChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
             created=int(time.time()),
             model=model_id,
+            provider="gemini",
             choices=[choice],
-            usage=usage
+            usage=usage,
+            metadata=ResponseMetadata(
+                provider_name="gemini",
+                provider_model=model_id
+            )
         )
 
     def _handle_http_error(self, exc: httpx.HTTPStatusError):

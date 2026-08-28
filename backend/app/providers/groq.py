@@ -90,12 +90,18 @@ class GroqProvider(ProviderBase):
             total_tokens=usage_data.get("total_tokens", 0),
         )
         
+        from app.models.chat import ResponseMetadata
         return ChatCompletionResponse(
             id=response_data.get("id", f"chatcmpl-{uuid.uuid4().hex[:12]}"),
             created=response_data.get("created", int(time.time())),
             model=response_data.get("model", model_id),
+            provider="groq",
             choices=[choice],
-            usage=usage
+            usage=usage,
+            metadata=ResponseMetadata(
+                provider_name="groq",
+                provider_model=response_data.get("model", model_id)
+            )
         )
 
     def _handle_http_error(self, exc: httpx.HTTPStatusError):
