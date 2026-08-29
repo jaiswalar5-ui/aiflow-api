@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str | None = None
     PROVIDER_CONFIG_PATH: str | None = None
     ENABLE_HOT_RELOAD: bool = True
+    QUOTA_STORAGE_BACKEND: str = "memory"
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     model_config = SettingsConfigDict(
         env_file=".env", 

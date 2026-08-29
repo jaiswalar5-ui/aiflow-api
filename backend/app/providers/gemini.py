@@ -119,18 +119,55 @@ class GeminiProvider(ProviderBase):
     def _handle_http_error(self, exc: httpx.HTTPStatusError):
         """Maps HTTP status codes to standardized provider errors."""
         status = exc.response.status_code
+        headers = dict(exc.response.headers)
+        
+        try:
+            body = exc.response.json()
+        except:
+            body = {"text": exc.response.text}
+        
         if status in (401, 403):
-            raise ProviderAuthenticationError(f"Authentication failed: {exc.response.text}") from exc
+            raise ProviderAuthenticationError(
+                f"Authentication failed: {exc.response.text}",
+                status_code=status,
+                response_headers=headers,
+                response_body=body
+            ) from exc
         elif status == 429:
-            raise ProviderRateLimitError(f"Rate limit exceeded: {exc.response.text}") from exc
+            raise ProviderRateLimitError(
+                f"Rate limit exceeded: {exc.response.text}",
+                status_code=status,
+                response_headers=headers,
+                response_body=body
+            ) from exc
         elif status == 400:
-            raise ProviderInvalidRequestError(f"Invalid request: {exc.response.text}") from exc
+            raise ProviderInvalidRequestError(
+                f"Invalid request: {exc.response.text}",
+                status_code=status,
+                response_headers=headers,
+                response_body=body
+            ) from exc
         elif status == 404:
-            raise ProviderUnsupportedModelError(f"Model not found: {exc.response.text}") from exc
+            raise ProviderUnsupportedModelError(
+                f"Model not found: {exc.response.text}",
+                status_code=status,
+                response_headers=headers,
+                response_body=body
+            ) from exc
         elif status in (500, 502, 503, 504):
-            raise ProviderServerError(f"Server error: {exc.response.text}") from exc
+            raise ProviderServerError(
+                f"Server error: {exc.response.text}",
+                status_code=status,
+                response_headers=headers,
+                response_body=body
+            ) from exc
         else:
-            raise ProviderUnknownError(f"Unknown HTTP error {status}: {exc.response.text}") from exc
+            raise ProviderUnknownError(
+                f"Unknown HTTP error {status}: {exc.response.text}",
+                status_code=status,
+                response_headers=headers,
+                response_body=body
+            ) from exc
 
     async def send_chat_completion(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         if not self.api_key:

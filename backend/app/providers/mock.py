@@ -50,11 +50,12 @@ class MockFailingProvider(ProviderBase):
     """
     A mock provider that always raises a specified ProviderError.
     """
-    def __init__(self, error_to_raise: Exception):
+    def __init__(self, error_to_raise: Exception, supported_models: Optional[List[str]] = None):
         self._error = error_to_raise
+        self._supported_models = supported_models or ["mock-failing"]
         
     def get_supported_models(self) -> List[str]:
-        return ["mock-failing"]
+        return self._supported_models
         
     async def check_health(self) -> bool:
         return False

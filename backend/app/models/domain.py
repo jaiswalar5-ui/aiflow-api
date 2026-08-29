@@ -33,6 +33,16 @@ class ProviderState(Base):
     current_quota_usage: Mapped[int] = mapped_column(Integer, default=0)
     last_health_check: Mapped[datetime] = mapped_column(DateTime, default=get_utc_now)
     
+    # Quota management fields
+    availability: Mapped[str] = mapped_column(String, default="available", nullable=True)
+    quota_confidence: Mapped[str] = mapped_column(String, default="unknown", nullable=True)
+    request_count: Mapped[int] = mapped_column(Integer, default=0)
+    token_usage: Mapped[int] = mapped_column(Integer, default=0)
+    rate_limit_events: Mapped[int] = mapped_column(Integer, default=0)
+    last_quota_failure: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    cooldown_until: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    
     provider = relationship("ProviderMetadata", back_populates="state")
 
 
