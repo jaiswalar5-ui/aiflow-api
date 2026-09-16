@@ -47,7 +47,17 @@ This is the FastAPI backend foundation for AIFlow.
 ## Running Tests
 Run the test suite using pytest:
 ```bash
-pytest
+python -m pytest -q
+```
+
+To run one provider-focused test module while developing:
+```bash
+python -m pytest tests/test_providers.py -q
+```
+
+After starting the server, verify that it is responding:
+```bash
+curl http://127.0.0.1:8000/health
 ```
 
 ## Supported Providers
