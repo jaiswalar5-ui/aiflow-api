@@ -22,12 +22,22 @@ This is the FastAPI backend foundation for AIFlow.
    pip install -r requirements.txt
    ```
 
-4. Set up environment variables:
+4. Create a local environment file:
    ```bash
-   cp .env.example .env
+   copy NUL .env
+   ```
+   or on Unix/macOS:
+   ```bash
+   touch .env
    ```
 
-5. Run the development server:
+5. Add provider credentials in `.env` without committing secrets:
+   ```env
+   GEMINI_API_KEY="your-gemini-api-key"
+   GROQ_API_KEY="your-groq-api-key"
+   ```
+
+6. Run the development server:
    ```bash
    uvicorn app.main:app --reload
    ```

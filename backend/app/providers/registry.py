@@ -16,6 +16,8 @@ class ProviderRegistry:
         
     def get_provider(self, name: str) -> ProviderBase:
         """Retrieve a provider instance by name. Raises KeyError if not found."""
+        if not name or not isinstance(name, str):
+            raise KeyError("Provider name must be a non-empty string.")
         if name not in self._providers:
             raise KeyError(f"Provider '{name}' not found in registry.")
         return self._providers[name]

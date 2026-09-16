@@ -31,6 +31,10 @@ def test_provider_registry(empty_registry):
     with pytest.raises(KeyError):
         empty_registry.get_provider("nonexistent")
 
+    with pytest.raises(KeyError):
+        empty_registry.get_provider("")
+
+
 def test_config_registry(empty_config_registry):
     mock = MockProvider()
     empty_config_registry.register_provider("mock", mock)
@@ -77,3 +81,12 @@ async def test_routing_engine_unsupported_model(empty_config_registry):
     
     with pytest.raises(ProviderUnsupportedModelError):
         await engine.route_chat_completion(req, target_provider="mock")
+
+
+@pytest.mark.asyncio
+async def test_routing_engine_rejects_unknown_provider(empty_config_registry):
+    engine = RoutingEngine(registry=empty_config_registry)
+    req = ChatCompletionRequest(model="mock-gpt", messages=[ChatMessage(role="user", content="Hi")])
+
+    with pytest.raises(KeyError):
+        await engine.route_chat_completion(req, target_provider="missing-provider")

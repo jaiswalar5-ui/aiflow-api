@@ -1,0 +1,17 @@
+# Python cache and virtual envs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local runtime state
+.env
+.env.*
+aiflow.db
+*.log
+
+# Editor and OS files
+.vscode/
+.DS_Store
+Thumbs.db
