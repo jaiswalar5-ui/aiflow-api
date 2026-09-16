@@ -12,6 +12,8 @@ class ProviderRegistry:
         
     def register_provider(self, name: str, provider: ProviderBase) -> None:
         """Register a provider instance under a specific name."""
+        if not name or not isinstance(name, str):
+            raise ValueError("Provider name must be a non-empty string.")
         self._providers[name] = provider
         
     def get_provider(self, name: str) -> ProviderBase:

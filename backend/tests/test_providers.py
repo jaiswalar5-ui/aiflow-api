@@ -34,6 +34,9 @@ def test_provider_registry(empty_registry):
     with pytest.raises(KeyError):
         empty_registry.get_provider("")
 
+    with pytest.raises(ValueError):
+        empty_registry.register_provider("", mock)
+
 
 def test_config_registry(empty_config_registry):
     mock = MockProvider()
