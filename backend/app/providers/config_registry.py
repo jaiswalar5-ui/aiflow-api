@@ -105,6 +105,10 @@ class ConfigurableProviderRegistry:
             module_path, class_name = adapter_type.rsplit('.', 1)
             module = importlib.import_module(module_path)
             provider_class = getattr(module, class_name)
+            if not inspect.isclass(provider_class) or not issubclass(provider_class, ProviderBase):
+                raise ConfigLoadError(
+                    f"Provider class '{adapter_type}' must inherit from ProviderBase"
+                )
             return provider_class
         except (ImportError, AttributeError, ValueError) as e:
             raise ConfigLoadError(f"Failed to import provider class '{adapter_type}': {e}")

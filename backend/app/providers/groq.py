@@ -28,11 +28,16 @@ class GroqProvider(ProviderBase):
     """
     Provider adapter for Groq REST API via httpx.
     """
-    def __init__(self, timeout_seconds: float = 30.0, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        timeout_seconds: float = 30.0,
+        api_key: Optional[str] = None,
+        supported_models: Optional[List[str]] = None,
+    ):
         self.timeout = timeout_seconds
         self.api_key = api_key or settings.GROQ_API_KEY
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.supported_models = [
+        self.supported_models = supported_models or [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
             "mixtral-8x7b-32768",
@@ -119,42 +124,48 @@ class GroqProvider(ProviderBase):
                 f"Authentication failed: {exc.response.text}",
                 status_code=status,
                 response_headers=headers,
-                response_body=body
+                response_body=body,
+                provider_name="groq"
             ) from exc
         elif status == 429:
             raise ProviderRateLimitError(
                 f"Rate limit exceeded: {exc.response.text}",
                 status_code=status,
                 response_headers=headers,
-                response_body=body
+                response_body=body,
+                provider_name="groq"
             ) from exc
         elif status == 400:
             raise ProviderInvalidRequestError(
                 f"Invalid request: {exc.response.text}",
                 status_code=status,
                 response_headers=headers,
-                response_body=body
+                response_body=body,
+                provider_name="groq"
             ) from exc
         elif status == 404:
             raise ProviderUnsupportedModelError(
                 f"Model or endpoint not found: {exc.response.text}",
                 status_code=status,
                 response_headers=headers,
-                response_body=body
+                response_body=body,
+                provider_name="groq"
             ) from exc
         elif status in (500, 502, 503, 504):
             raise ProviderServerError(
                 f"Server error: {exc.response.text}",
                 status_code=status,
                 response_headers=headers,
-                response_body=body
+                response_body=body,
+                provider_name="groq"
             ) from exc
         else:
             raise ProviderUnknownError(
                 f"Unknown HTTP error {status}: {exc.response.text}",
                 status_code=status,
                 response_headers=headers,
-                response_body=body
+                response_body=body,
+                provider_name="groq"
             ) from exc
 
     async def send_chat_completion(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
@@ -183,10 +194,12 @@ class GroqProvider(ProviderBase):
         except httpx.HTTPStatusError as exc:
             self._handle_http_error(exc)
         except httpx.TimeoutException as exc:
-            raise ProviderTimeoutError("Groq API request timed out") from exc
+            raise ProviderTimeoutError("Groq API request timed out", provider_name="groq") from exc
         except httpx.RequestError as exc:
-            raise ProviderNetworkError(f"Network error connecting to Groq: {str(exc)}") from exc
+            raise ProviderNetworkError(
+                f"Network error connecting to Groq: {str(exc)}", provider_name="groq"
+            ) from exc
         except ProviderError:
             raise
         except Exception as exc:
-            raise ProviderUnknownError(f"Unexpected error: {str(exc)}") from exc
+            raise ProviderUnknownError(f"Unexpected error: {str(exc)}", provider_name="groq") from exc

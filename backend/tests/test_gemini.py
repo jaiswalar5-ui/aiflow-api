@@ -6,7 +6,7 @@ from app.providers.errors import (
     ProviderAuthenticationError, ProviderRateLimitError,
     ProviderInvalidRequestError, ProviderUnsupportedModelError,
     ProviderServerError, ProviderTimeoutError, ProviderNetworkError,
-    ProviderUnknownError
+    ProviderUnknownError, QuotaExhaustedError
 )
 from app.models.chat import ChatCompletionRequest, ChatMessage
 
@@ -61,8 +61,21 @@ async def test_gemini_auth_error(gemini_provider, basic_request):
 @pytest.mark.asyncio
 @respx.mock
 async def test_gemini_rate_limit(gemini_provider, basic_request):
-    respx.post().mock(return_value=httpx.Response(429, json={"error": "Quota Exceeded"}))
+    respx.post().mock(return_value=httpx.Response(
+        429,
+        json={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Rate limit exceeded"}}
+    ))
     with pytest.raises(ProviderRateLimitError):
+        await gemini_provider.send_chat_completion(basic_request)
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_gemini_quota_exhausted(gemini_provider, basic_request):
+    respx.post().mock(return_value=httpx.Response(
+        429,
+        json={"error": {"code": "QUOTA_EXCEEDED", "message": "Quota exceeded"}}
+    ))
+    with pytest.raises(QuotaExhaustedError):
         await gemini_provider.send_chat_completion(basic_request)
 
 @pytest.mark.asyncio

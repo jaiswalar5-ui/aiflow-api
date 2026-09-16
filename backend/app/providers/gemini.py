@@ -7,15 +7,11 @@ from app.core.config import settings
 from app.providers.base import ProviderBase
 from app.providers.errors import (
     ProviderError,
-    AuthenticationError,
-    RateLimitError,
-    TimeoutError,
-    ServerError,
-    InvalidRequestError,
-    UnsupportedModelError,
-    NetworkError,
-    UnknownError
+    ProviderAuthenticationError,
+    ProviderUnsupportedModelError,
+    ProviderUnknownError,
 )
+from app.core.error_classifier import classify_error, get_error_classifier
 from app.models.chat import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -28,11 +24,18 @@ class GeminiProvider(ProviderBase):
     """
     Provider adapter for Gemini REST API via httpx.
     """
-    def __init__(self, timeout_seconds: float = 30.0, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        timeout_seconds: float = 30.0,
+        api_key: Optional[str] = None,
+        supported_models: Optional[List[str]] = None,
+    ):
         self.timeout = timeout_seconds
         self.api_key = api_key or settings.GEMINI_API_KEY
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-        self.supported_models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
+        self.supported_models = supported_models or [
+            "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"
+        ]
 
     def get_supported_models(self) -> List[str]:
         return self.supported_models
@@ -118,8 +121,6 @@ class GeminiProvider(ProviderBase):
 
     def _handle_http_error(self, exc: httpx.HTTPStatusError):
         """Use centralized error classifier to map HTTP errors to standardized provider errors."""
-        from app.core.error_classifier import classify_error, get_error_classifier
-        
         status = exc.response.status_code
         headers = dict(exc.response.headers)
         
@@ -173,7 +174,6 @@ class GeminiProvider(ProviderBase):
         except httpx.HTTPStatusError as exc:
             self._handle_http_error(exc)
         except httpx.TimeoutException as exc:
-            from app.core.error_classifier import classify_error
             classification = classify_error(
                 provider_name="gemini",
                 http_status=None,
@@ -189,7 +189,6 @@ class GeminiProvider(ProviderBase):
             )
             raise provider_error from exc
         except httpx.RequestError as exc:
-            from app.core.error_classifier import classify_error
             classification = classify_error(
                 provider_name="gemini",
                 http_status=None,
@@ -207,7 +206,6 @@ class GeminiProvider(ProviderBase):
         except ProviderError:
             raise
         except Exception as exc:
-            from app.core.error_classifier import classify_error
             classification = classify_error(
                 provider_name="gemini",
                 http_status=None,

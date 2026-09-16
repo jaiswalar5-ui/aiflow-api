@@ -80,16 +80,26 @@ class ErrorClassifier:
             if raw_error_body:
                 try:
                     parsed_body = json.loads(raw_error_body)
+                    if not isinstance(parsed_body, dict):
+                        parsed_body = {"raw": raw_error_body}
                 except json.JSONDecodeError:
                     parsed_body = {"raw": raw_error_body}
             
             # Use vendor-specific classifier if available
             classifier = self._vendor_classifiers.get(provider_name.lower())
             if classifier:
-                return classifier(http_status, parsed_body, response_headers, original_error)
-            
-            # Fallback to generic classification
-            return self._classify_generic_error(http_status, parsed_body, response_headers, original_error)
+                result = classifier(http_status, parsed_body, response_headers, original_error)
+            else:
+                result = self._classify_generic_error(
+                    http_status, parsed_body, response_headers, original_error
+                )
+
+            result.provider_metadata.update({
+                "status_code": http_status,
+                "response_headers": response_headers or {},
+                "response_body": parsed_body or {},
+            })
+            return result
             
         except Exception as e:
             logger.error(f"Error during classification: {e}")
@@ -109,7 +119,27 @@ class ErrorClassifier:
         original_error: Optional[str]
     ) -> ErrorClassificationResult:
         """Generic error classification based on HTTP status codes."""
+        raw_text = ""
+        if parsed_body:
+            raw_text = str(parsed_body).lower()
+        if original_error:
+            raw_text += " " + str(original_error).lower()
+
         if http_status is None:
+            if "timeout" in raw_text:
+                return ErrorClassificationResult(
+                    error_type=ErrorType.TIMEOUT_ERROR,
+                    retryable=True,
+                    safe_message="Request timed out",
+                    original_error=original_error
+                )
+            if any(token in raw_text for token in ["network", "connection", "dns", "refused", "unreachable", "socket"]):
+                return ErrorClassificationResult(
+                    error_type=ErrorType.NETWORK_ERROR,
+                    retryable=True,
+                    safe_message="Network error",
+                    original_error=original_error
+                )
             return ErrorClassificationResult(
                 error_type=ErrorType.UNKNOWN_ERROR,
                 retryable=True,
@@ -202,11 +232,15 @@ class ErrorClassifier:
         original_error: Optional[str]
     ) -> ErrorClassificationResult:
         """Classify Gemini-specific errors."""
-        # Gemini-specific error codes and messages
         if parsed_body:
-            error_code = parsed_body.get("error", {}).get("code")
-            error_message = parsed_body.get("error", {}).get("message", "").lower()
-            
+            error_payload = parsed_body.get("error", {})
+            if isinstance(error_payload, dict):
+                error_code = error_payload.get("code")
+                error_message = str(error_payload.get("message", "")).lower()
+            else:
+                error_code = None
+                error_message = str(error_payload).lower()
+
             if error_code == "QUOTA_EXCEEDED" or "quota" in error_message:
                 return ErrorClassificationResult(
                     error_type=ErrorType.QUOTA_EXHAUSTED_ERROR,
@@ -223,7 +257,7 @@ class ErrorClassifier:
                     original_error=original_error,
                     backoff_hint=self._extract_retry_after(response_headers)
                 )
-        
+
         # Fallback to generic classification
         return self._classify_generic_error(http_status, parsed_body, response_headers, original_error)
     
@@ -235,13 +269,16 @@ class ErrorClassifier:
         original_error: Optional[str]
     ) -> ErrorClassificationResult:
         """Classify Groq-specific errors."""
-        # Groq-specific error codes
         if parsed_body:
-            error_type = parsed_body.get("error", {}).get("type", "")
-            error_message = parsed_body.get("error", {}).get("message", "").lower()
-            
+            error_payload = parsed_body.get("error", {})
+            if isinstance(error_payload, dict):
+                error_type = str(error_payload.get("type", "")).lower()
+                error_message = str(error_payload.get("message", "")).lower()
+            else:
+                error_type = ""
+                error_message = str(error_payload).lower()
+
             if error_type == "rate_limit_exceeded" or "rate limit" in error_message:
-                # Check if it's quota vs rate limit
                 if "quota" in error_message or "usage" in error_message:
                     return ErrorClassificationResult(
                         error_type=ErrorType.QUOTA_EXHAUSTED_ERROR,
@@ -265,8 +302,7 @@ class ErrorClassifier:
                     safe_message="Invalid request to Groq",
                     original_error=original_error
                 )
-        
-        # Fallback to generic classification
+
         return self._classify_generic_error(http_status, parsed_body, response_headers, original_error)
     
     def _classify_mock_error(

@@ -93,7 +93,7 @@ async def provider_exception_handler(request: Request, exc: ProviderError):
             message=str(exc),
             code=str(status_code),
             retryable=retryable,
-            provider=getattr(exc, 'provider', None),
+            provider=getattr(exc, 'provider_name', None),
             request_id=None # Could extract from request if we generate one
         )
     )
