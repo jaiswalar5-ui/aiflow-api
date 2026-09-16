@@ -23,6 +23,12 @@ class ProviderRegistry:
         if name not in self._providers:
             raise KeyError(f"Provider '{name}' not found in registry.")
         return self._providers[name]
+
+    def unregister_provider(self, name: str) -> ProviderBase:
+        """Remove and return a registered provider."""
+        if name not in self._providers:
+            raise KeyError(f"Provider '{name}' not found in registry.")
+        return self._providers.pop(name)
         
     def list_providers(self) -> List[str]:
         """Return a list of all registered provider names."""
