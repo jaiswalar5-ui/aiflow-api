@@ -347,8 +347,12 @@ class ErrorClassifier:
         if parsed_body:
             # Check for quota-specific keywords
             error_data = parsed_body.get("error", {})
-            error_message = error_data.get("message", "").lower()
-            error_code = error_data.get("code", "").lower()
+            if isinstance(error_data, dict):
+                error_message = str(error_data.get("message", "")).lower()
+                error_code = str(error_data.get("code", "")).lower()
+            else:
+                error_message = str(error_data).lower()
+                error_code = ""
             
             quota_keywords = ["quota", "usage", "credits", "limit reached", "exceeded"]
             if any(keyword in error_message or keyword in error_code for keyword in quota_keywords):

@@ -47,8 +47,8 @@ class ProviderError(Exception):
             request_id: Request identifier for tracing
         """
         # Ensure message is safe (no credentials)
-        safe_message = self._sanitize_message(message)
-        super().__init__(safe_message)
+        self.safe_message = self._sanitize_message(message)
+        super().__init__(self.safe_message)
         
         self.error_type = error_type
         self.retryable = retryable
@@ -57,6 +57,14 @@ class ProviderError(Exception):
         self.response_body = response_body or {}
         self.provider_name = provider_name
         self.request_id = request_id
+        
+        self.provider_metadata = {
+            "provider_name": self.provider_name,
+            "status_code": self.status_code,
+            "request_id": self.request_id,
+            "response_headers": self.response_headers,
+            "response_body": self.response_body,
+        }
     
     @staticmethod
     def _sanitize_message(message: str) -> str:
