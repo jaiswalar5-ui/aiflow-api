@@ -8,14 +8,10 @@ from app.providers.base import ProviderBase
 from app.providers.errors import (
     ProviderError,
     ProviderAuthenticationError,
-    ProviderRateLimitError,
-    ProviderInvalidRequestError,
     ProviderUnsupportedModelError,
-    ProviderServerError,
-    ProviderTimeoutError,
-    ProviderNetworkError,
     ProviderUnknownError,
 )
+from app.core.error_classifier import classify_error, get_error_classifier
 from app.models.chat import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -110,63 +106,30 @@ class GroqProvider(ProviderBase):
         )
 
     def _handle_http_error(self, exc: httpx.HTTPStatusError):
-        """Maps HTTP status codes to standardized provider errors."""
+        """Maps HTTP status codes to standardized provider errors using central classifier."""
         status = exc.response.status_code
         headers = dict(exc.response.headers)
         
         try:
-            body = exc.response.json()
+            raw_body = exc.response.text
         except:
-            body = {"text": exc.response.text}
+            raw_body = str(exc)
+            
+        classification = classify_error(
+            provider_name="groq",
+            http_status=status,
+            raw_error_body=raw_body,
+            response_headers=headers,
+            original_error=str(exc)
+        )
         
-        if status in (401, 403):
-            raise ProviderAuthenticationError(
-                f"Authentication failed: {exc.response.text}",
-                status_code=status,
-                response_headers=headers,
-                response_body=body,
-                provider_name="groq"
-            ) from exc
-        elif status == 429:
-            raise ProviderRateLimitError(
-                f"Rate limit exceeded: {exc.response.text}",
-                status_code=status,
-                response_headers=headers,
-                response_body=body,
-                provider_name="groq"
-            ) from exc
-        elif status == 400:
-            raise ProviderInvalidRequestError(
-                f"Invalid request: {exc.response.text}",
-                status_code=status,
-                response_headers=headers,
-                response_body=body,
-                provider_name="groq"
-            ) from exc
-        elif status == 404:
-            raise ProviderUnsupportedModelError(
-                f"Model or endpoint not found: {exc.response.text}",
-                status_code=status,
-                response_headers=headers,
-                response_body=body,
-                provider_name="groq"
-            ) from exc
-        elif status in (500, 502, 503, 504):
-            raise ProviderServerError(
-                f"Server error: {exc.response.text}",
-                status_code=status,
-                response_headers=headers,
-                response_body=body,
-                provider_name="groq"
-            ) from exc
-        else:
-            raise ProviderUnknownError(
-                f"Unknown HTTP error {status}: {exc.response.text}",
-                status_code=status,
-                response_headers=headers,
-                response_body=body,
-                provider_name="groq"
-            ) from exc
+        classifier = get_error_classifier()
+        provider_error = classifier.create_provider_error(
+            classification=classification,
+            provider_name="groq",
+            request_id=None
+        )
+        raise provider_error from exc
 
     async def send_chat_completion(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         if not self.api_key:
@@ -194,12 +157,49 @@ class GroqProvider(ProviderBase):
         except httpx.HTTPStatusError as exc:
             self._handle_http_error(exc)
         except httpx.TimeoutException as exc:
-            raise ProviderTimeoutError("Groq API request timed out", provider_name="groq") from exc
+            classification = classify_error(
+                provider_name="groq",
+                http_status=None,
+                raw_error_body=str(exc),
+                response_headers=None,
+                original_error="Request timeout"
+            )
+            classifier = get_error_classifier()
+            provider_error = classifier.create_provider_error(
+                classification=classification,
+                provider_name="groq",
+                request_id=None
+            )
+            raise provider_error from exc
         except httpx.RequestError as exc:
-            raise ProviderNetworkError(
-                f"Network error connecting to Groq: {str(exc)}", provider_name="groq"
-            ) from exc
+            classification = classify_error(
+                provider_name="groq",
+                http_status=None,
+                raw_error_body=str(exc),
+                response_headers=None,
+                original_error="Network error"
+            )
+            classifier = get_error_classifier()
+            provider_error = classifier.create_provider_error(
+                classification=classification,
+                provider_name="groq",
+                request_id=None
+            )
+            raise provider_error from exc
         except ProviderError:
             raise
         except Exception as exc:
-            raise ProviderUnknownError(f"Unexpected error: {str(exc)}", provider_name="groq") from exc
+            classification = classify_error(
+                provider_name="groq",
+                http_status=None,
+                raw_error_body=str(exc),
+                response_headers=None,
+                original_error="Unexpected error"
+            )
+            classifier = get_error_classifier()
+            provider_error = classifier.create_provider_error(
+                classification=classification,
+                provider_name="groq",
+                request_id=None
+            )
+            raise provider_error from exc
