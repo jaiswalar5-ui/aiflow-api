@@ -431,15 +431,25 @@ class TestQuotaExhaustionScenarios:
         """Test confirmed quota from provider response."""
         headers = {
             "X-RateLimit-Reset": str(int(datetime.now(timezone.utc).timestamp()) + 3600),
-            "X-RateLimit-Remaining": "100"
+            "X-RateLimit-Remaining": "50"
         }
         
         await manager.record_rate_limit("test-provider", status_code=429, response_headers=headers)
-        
+
         state = await manager.get_provider_state("test-provider")
         assert state.quota_confidence == QuotaConfidence.CONFIRMED
         assert state.reset_info is not None
-        assert state.reset_info.requests_remaining == 100
+        assert state.reset_info.requests_remaining == 50
+
+    @pytest.mark.asyncio
+    async def test_extract_reset_info_ignores_malformed_headers(self, manager):
+        """Test malformed reset headers do not break quota tracking."""
+        reset_info = manager._extract_reset_info(
+            {"X-RateLimit-Reset": "later", "X-RateLimit-Remaining": "unknown"},
+            None,
+        )
+
+        assert reset_info is None
 
 
 class TestQuotaManagerIntegration:

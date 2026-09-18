@@ -140,10 +140,21 @@ class QuotaManager:
             reset_time = headers.get("X-RateLimit-Reset") or headers.get("x-ratelimit-reset")
             remaining = headers.get("X-RateLimit-Remaining") or headers.get("x-ratelimit-remaining")
             
-            if reset_time or remaining:
+            try:
+                parsed_reset_time = (
+                    datetime.fromtimestamp(int(reset_time), timezone.utc)
+                    if reset_time else None
+                )
+                parsed_remaining = int(remaining) if remaining else None
+            except (TypeError, ValueError, OverflowError):
+                logger.debug("Ignoring malformed rate-limit reset headers")
+                parsed_reset_time = None
+                parsed_remaining = None
+
+            if parsed_reset_time or parsed_remaining is not None:
                 reset_info = QuotaResetInfo(
-                    reset_time=datetime.fromtimestamp(int(reset_time), timezone.utc) if reset_time else None,
-                    requests_remaining=int(remaining) if remaining else None
+                    reset_time=parsed_reset_time,
+                    requests_remaining=parsed_remaining
                 )
         
         # Try to extract from body if not found in headers
