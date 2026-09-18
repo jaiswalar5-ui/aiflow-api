@@ -32,6 +32,17 @@ def test_classify_429_quota():
     assert result.retryable is True
     assert "Quota exhausted" in result.safe_message
 
+def test_classify_429_ignores_malformed_remaining_header():
+    result = classify_error(
+        "test_provider",
+        http_status=429,
+        raw_error_body='{"error": "too many requests"}',
+        response_headers={"X-RateLimit-Remaining": "unknown"},
+    )
+
+    assert result.error_type == ErrorType.RATE_LIMIT_ERROR
+    assert result.retryable is True
+
 def test_classify_500_server_error():
     result = classify_error("test_provider", http_status=500, raw_error_body='{"error": "internal error"}')
     assert result.error_type == ErrorType.SERVER_ERROR

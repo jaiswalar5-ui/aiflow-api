@@ -361,8 +361,12 @@ class ErrorClassifier:
         if response_headers:
             # Check for quota-related headers
             remaining = response_headers.get("X-RateLimit-Remaining") or response_headers.get("x-ratelimit-remaining")
-            if remaining and int(remaining) == 0:
-                return True
+            if remaining:
+                try:
+                    if int(remaining) == 0:
+                        return True
+                except (TypeError, ValueError):
+                    logger.debug("Ignoring invalid X-RateLimit-Remaining header: %s", remaining)
         
         return False
     
