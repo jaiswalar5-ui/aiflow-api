@@ -33,3 +33,57 @@ class RetryState:
         self.request_id = request_id or str(uuid.uuid4())
         self.aborted = False
 
+class RetryEngine:
+    """Engine executing async callbacks with retry and backoff logic."""
+    def __init__(self, policy: Optional[RetryPolicy] = None):
+        self.policy = policy or RetryPolicy()
+
+    def _calculate_delay(self, attempt: int) -> float:
+        """Calculate delay with exponential backoff and jitter."""
+        base = self.policy.base_delay * (2 ** (attempt - 1))
+        delay = min(base, self.policy.max_delay)
+        
+        if self.policy.jitter_factor > 0:
+            jitter = delay * self.policy.jitter_factor
+            delay = delay + random.uniform(-jitter, jitter)
+            
+        return max(0.0, delay)
+    
+    async def execute_with_retry(
+        self,
+        func: Callable[..., Coroutine[Any, Any, T]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> T:
+        """Execute an async function with the configured retry policy."""
+        state = RetryState(self.policy, kwargs.get('request_id'))
+        
+        while True:
+            try:
+                state.attempts += 1
+                return await func(*args, **kwargs)
+            except ProviderError as e:
+                # Basic non-retryable check
+                if not e.retryable:
+                    logger.debug(f"Operation failed with non-retryable error: {e.error_type} [Request {state.request_id}]")
+                    raise
+                
+                # Check bounds
+                if state.attempts > self.policy.max_attempts:
+                    logger.warning(
+                        f"Max retries ({self.policy.max_attempts}) reached. "
+                        f"Failing with {e.error_type} [Request {state.request_id}]"
+                    )
+                    raise
+                
+                # Calculate basic backoff
+                delay = self._calculate_delay(state.attempts)
+                
+                logger.info(
+                    f"Retry {state.attempts}/{self.policy.max_attempts} for "
+                    f"request {state.request_id} after {delay:.2f}s delay. "
+                    f"Reason: {e.error_type}"
+                )
+                
+                await asyncio.sleep(delay)
+
