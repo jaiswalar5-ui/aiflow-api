@@ -14,13 +14,9 @@ class RoutingEngine:
     Integrates with quota manager for intelligent routing decisions.
     """
     
-    def __init__(self, registry: Optional[object] = None, quota_manager=None):
+    def __init__(self, registry=None, quota_manager=None):
         """
         Initialize routing engine with a provider registry and quota manager.
-        
-        Args:
-            registry: Provider registry instance. If None, uses global configurable_registry.
-            quota_manager: Quota manager instance. If None, uses global quota manager.
         """
         self.registry = registry or configurable_registry
         self.quota_manager = quota_manager or get_quota_manager()
@@ -55,11 +51,17 @@ class RoutingEngine:
         # Track active request for hot-reload safety
         await self.registry.increment_active_requests()
         try:
-            # Delegate the call
-            response = await provider.send_chat_completion(request)
+            # Delegate the call with the retry engine
+            from app.api.dependencies import get_retry_engine
+            retry_engine = get_retry_engine()
+            
+            response = await retry_engine.execute_with_retry(
+                provider.send_chat_completion,
+                request
+            )
             
             # Record successful request in quota manager
-            tokens_used = response.usage.total_tokens if response.usage else 0
+            tokens_used = (response.usage.total_tokens or 0) if response.usage else 0
             await self.quota_manager.record_request(target_provider, tokens_used)
             
             return response
