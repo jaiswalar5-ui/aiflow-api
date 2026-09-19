@@ -49,6 +49,25 @@ class RetryEngine:
             
         return max(0.0, delay)
     
+    def _get_retry_after(self, error: ProviderError) -> Optional[float]:
+        """Extract retry-after hint from the error if available."""
+        if isinstance(error, (RateLimitError, QuotaExhaustedError)):
+            if error.response_headers:
+                retry_after = error.response_headers.get("Retry-After") or error.response_headers.get("retry-after")
+                if retry_after:
+                    try:
+                        return float(retry_after)
+                    except ValueError:
+                        pass
+        return None
+
+    def _should_conservative_stop(self, error: ProviderError, attempt: int) -> bool:
+        """Check if we should stop early for UnknownError."""
+        if error.error_type == ErrorType.UNKNOWN_ERROR:
+            if not self.policy.conservative_unknown_retry and attempt >= 1:
+                return True
+        return False
+
     async def execute_with_retry(
         self,
         func: Callable[..., Coroutine[Any, Any, T]],
@@ -61,23 +80,43 @@ class RetryEngine:
         while True:
             try:
                 state.attempts += 1
-                return await func(*args, **kwargs)
+                result = await func(*args, **kwargs)
+                return result
             except ProviderError as e:
                 # Basic non-retryable check
                 if not e.retryable:
                     logger.debug(f"Operation failed with non-retryable error: {e.error_type} [Request {state.request_id}]")
                     raise
                 
+                # Check for nested logic (if already handled)
+                if getattr(e, '_retry_handled', False):
+                    logger.debug(f"Error {e.error_type} already handled by nested retry engine. Aborting outer retry. [Request {state.request_id}]")
+                    raise
+
                 # Check bounds
                 if state.attempts > self.policy.max_attempts:
                     logger.warning(
                         f"Max retries ({self.policy.max_attempts}) reached. "
                         f"Failing with {e.error_type} [Request {state.request_id}]"
                     )
+                    setattr(e, '_retry_handled', True)
                     raise
                 
-                # Calculate basic backoff
-                delay = self._calculate_delay(state.attempts)
+                # Check conservative unknown policy
+                if self._should_conservative_stop(e, state.attempts):
+                    logger.warning(
+                        f"Stopping conservatively on UnknownError after {state.attempts} attempts [Request {state.request_id}]"
+                    )
+                    setattr(e, '_retry_handled', True)
+                    raise
+                
+                # Calculate basic backoff or use retry-after hint
+                retry_after = self._get_retry_after(e)
+                if retry_after is not None:
+                    delay = retry_after
+                    logger.info(f"Using server-provided Retry-After hint: {delay}s [Request {state.request_id}]")
+                else:
+                    delay = self._calculate_delay(state.attempts)
                 
                 logger.info(
                     f"Retry {state.attempts}/{self.policy.max_attempts} for "
