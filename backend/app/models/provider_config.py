@@ -43,6 +43,14 @@ class ProviderConfig(BaseModel):
     routing_weight: float = Field(default=1.0, ge=0.0, le=100.0, description="Weight for load balancing (0 = excluded)")
     capabilities: ProviderCapabilities = Field(default_factory=ProviderCapabilities, description="Provider capabilities")
     env_var_prefix: Optional[str] = Field(default=None, description="Environment variable prefix for API keys (e.g., GEMINI)")
+    is_local_fallback: bool = Field(
+        default=False,
+        description=(
+            "Mark this provider as a local/on-premise fallback. "
+            "Failover engine will only attempt local providers after all "
+            "cloud providers have been exhausted."
+        ),
+    )
     
     @field_validator('name')
     @classmethod

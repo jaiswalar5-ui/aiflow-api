@@ -73,6 +73,7 @@ providers:
   - name: mock
     adapter_type: app.providers.mock.MockProvider
     enabled: true
+    is_local_fallback: true
     supported_models:
       - mock-gpt-4
       - mock-gpt-3.5-turbo

@@ -1,145 +1,212 @@
+"""
+Routing Engine — Task 13 update
+
+Replaces the single-provider dispatch with FailoverEngine.execute_with_failover.
+The failover engine handles:
+  - ordered provider iteration (cloud-first, local-last)
+  - per-provider retry / backoff (Task 12 RetryEngine)
+  - error classification gating (Task 11)
+  - structured logs with correlation_id
+  - 503 AllProvidersExhaustedError when everything fails
+"""
 from typing import Optional
+import uuid
+
+from fastapi import HTTPException
+
 from app.models.chat import ChatCompletionRequest, ChatCompletionResponse
 from app.providers.config_registry import configurable_registry
-from app.providers.errors import ProviderUnsupportedModelError, ProviderRateLimitError
+from app.providers.errors import (
+    AllProvidersExhaustedError,
+    ProviderRateLimitError,
+    ProviderUnsupportedModelError,
+)
 from app.core.quota_manager import get_quota_manager
+from app.core.failover_engine import FailoverEngine, FailoverPolicy, get_failover_engine
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 class RoutingEngine:
     """
-    The core routing engine that determines which provider to use.
-    Consumes the configurable provider registry dynamically without hardcoded provider names.
-    Integrates with quota manager for intelligent routing decisions.
+    Core routing engine — delegates multi-provider orchestration to FailoverEngine.
+
+    Keeps eligibility selection (priority order, quota health) here and passes
+    the ordered provider list to the failover engine, which owns the retry /
+    failover lifecycle.
     """
-    
-    def __init__(self, registry=None, quota_manager=None):
-        """
-        Initialize routing engine with a provider registry and quota manager.
-        """
+
+    def __init__(self, registry=None, quota_manager=None, failover_engine: Optional[FailoverEngine] = None):
         self.registry = registry or configurable_registry
         self.quota_manager = quota_manager or get_quota_manager()
-    
-    async def route_chat_completion(self, request: ChatCompletionRequest, target_provider: Optional[str] = None) -> ChatCompletionResponse:
+        self._failover_engine = failover_engine or get_failover_engine()
+
+    async def route_chat_completion(
+        self,
+        request: ChatCompletionRequest,
+        target_provider: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+    ) -> ChatCompletionResponse:
         """
-        Routes the chat completion to a provider with quota-aware routing.
-        
+        Route a chat completion request through the failover engine.
+
         Args:
-            request: Chat completion request
-            target_provider: Specific provider name to use. If None, selects based on priority and quota.
-            
+            request:          Chat completion request.
+            target_provider:  Pin to a specific provider (bypasses failover ordering).
+            correlation_id:   Caller-supplied request ID; auto-generated when absent.
+
         Returns:
-            Chat completion response
-            
+            ChatCompletionResponse from the first successful provider.
+
         Raises:
-            RuntimeError: If no providers are available
-            ProviderUnsupportedModelError: If model is not supported by the provider
+            HTTPException 503: When all providers are exhausted.
         """
-        # Select provider based on priority and quota if not specified
-        if not target_provider:
-            target_provider = await self._select_best_provider(request)
-            if not target_provider:
-                raise RuntimeError("No available providers in AIFlow.")
-            
-        provider = self.registry.get_provider(target_provider)
-        
-        # Verify model is supported if specified
-        if request.model != "default" and request.model not in provider.get_supported_models():
-            raise ProviderUnsupportedModelError(f"Model '{request.model}' not supported by provider '{target_provider}'")
-        
-        # Track active request for hot-reload safety
+        cid = correlation_id or str(uuid.uuid4())
+
         await self.registry.increment_active_requests()
         try:
-            # Delegate the call with the retry engine
-            from app.api.dependencies import get_retry_engine
-            retry_engine = get_retry_engine()
-            
-            response = await retry_engine.execute_with_retry(
-                provider.send_chat_completion,
-                request
+            if target_provider:
+                # Pinned: single provider, no failover ordering
+                cloud_providers = [target_provider]
+                local_providers: list[str] = []
+            else:
+                cloud_providers, local_providers = await self._build_ordered_provider_lists(request)
+
+            # Build provider → supported-models map for unsupported-model guard
+            provider_models = {
+                name: self.registry.get_provider(name).get_supported_models()
+                for name in cloud_providers + local_providers
+            }
+
+            model = request.model if request.model != "default" else None
+
+            def func_factory(provider_name: str):
+                """Return a no-arg async callable for the retry engine."""
+                provider = self.registry.get_provider(provider_name)
+
+                async def _call():
+                    # Pre-flight check: verify model is supported
+                    if request.model != "default" and request.model not in provider.get_supported_models():
+                        raise ProviderUnsupportedModelError(
+                            f"Model '{request.model}' not supported by provider '{provider_name}'",
+                            provider_name=provider_name
+                        )
+
+                    response = await provider.send_chat_completion(request)
+                    # Record successful quota usage
+                    tokens_used = (response.usage.total_tokens or 0) if response.usage else 0
+                    await self.quota_manager.record_request(provider_name, tokens_used)
+                    return response
+
+                return _call
+
+            response = await self._failover_engine.execute_with_failover(
+                func_factory=func_factory,
+                cloud_providers=cloud_providers,
+                local_providers=local_providers,
+                correlation_id=cid,
+                model=model,
+                provider_models=provider_models,
             )
-            
-            # Record successful request in quota manager
-            tokens_used = (response.usage.total_tokens or 0) if response.usage else 0
-            await self.quota_manager.record_request(target_provider, tokens_used)
-            
             return response
-        except ProviderRateLimitError as e:
-            # Record rate limit event
-            await self.quota_manager.record_rate_limit(
-                target_provider,
-                status_code=e.status_code or 429,
-                response_headers=e.response_headers,
-                response_body=e.response_body
+
+        except AllProvidersExhaustedError as exc:
+            logger.error(
+                "All providers exhausted — returning 503.",
+                extra={
+                    "correlation_id": cid,
+                    "error_code": exc.error_type.value,
+                },
             )
-            logger.warning(f"Rate limit hit for provider {target_provider}: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error_code": exc.error_type.value,
+                    "message": (
+                        "The request could not be completed. All configured "
+                        "providers are currently unavailable. Please try again later."
+                    ),
+                    "request_id": cid,
+                },
+            )
+
+        except ProviderRateLimitError as exc:
+            # Record rate limit event so quota manager can cool down the provider
+            provider_name = exc.provider_name or "unknown"
+            await self.quota_manager.record_rate_limit(
+                provider_name,
+                status_code=exc.status_code or 429,
+                response_headers=exc.response_headers,
+                response_body=exc.response_body,
+            )
+            logger.warning(
+                "Rate limit propagated upstream.",
+                extra={"correlation_id": cid, "provider": provider_name},
+            )
             raise
+
         finally:
             await self.registry.decrement_active_requests()
-    
-    async def _select_best_provider(self, request: ChatCompletionRequest) -> Optional[str]:
+
+    # ------------------------------------------------------------------
+    # Provider ordering helpers
+    # ------------------------------------------------------------------
+
+    async def _build_ordered_provider_lists(
+        self, request: ChatCompletionRequest
+    ) -> tuple[list[str], list[str]]:
         """
-        Select the best provider based on priority, quota health, and model support.
-        
-        Args:
-            request: Chat completion request
-            
-        Returns:
-            Best provider name or None if no suitable provider found
+        Return (cloud_providers, local_providers) sorted by priority and quota health.
+
+        Cloud providers are tried first (highest-priority → lowest-priority).
+        Local/fallback providers are returned separately and tried last.
         """
-        providers_by_priority = self.registry.get_provider_by_priority()
-        if not providers_by_priority:
-            return None
-        
-        # Get available providers (not in cooldown/exhausted)
-        available_providers = await self.quota_manager.get_available_providers(providers_by_priority)
-        
-        if not available_providers:
-            logger.warning("All providers are in cooldown or exhausted. Using highest priority provider.")
-            return providers_by_priority[0]
-        
-        # Filter providers that support the requested model
-        model = request.model if request.model != "default" else None
-        if model:
-            model_supported = []
-            for provider_name in available_providers:
-                provider = self.registry.get_provider(provider_name)
-                if model in provider.get_supported_models():
-                    model_supported.append(provider_name)
-            candidates = model_supported if model_supported else available_providers
-        else:
-            candidates = available_providers
-        
-        if not candidates:
-            # No provider supports the model, use highest priority available
-            return available_providers[0]
-        
-        # Get health scores for candidates
-        health_scores = await self.quota_manager.get_provider_health_scores(candidates)
-        
-        # Select provider with highest health score
-        best_provider = max(candidates, key=lambda p: health_scores.get(p, 0.5))
-        
-        logger.debug(f"Selected provider {best_provider} with health score {health_scores.get(best_provider, 0.5)}")
-        return best_provider
-    
+        all_by_priority = self.registry.get_provider_by_priority()
+
+        # Separate local from cloud
+        cloud: list[str] = []
+        local: list[str] = []
+        for name in all_by_priority:
+            cfg = self.registry.get_provider_config(name)
+            if cfg and cfg.is_local_fallback:
+                local.append(name)
+            else:
+                cloud.append(name)
+
+        # Prefer quota-healthy cloud providers but keep all as failover candidates
+        try:
+            available = await self.quota_manager.get_available_providers(cloud)
+        except Exception:
+            available = cloud
+
+        if available:
+            # Put healthy providers first, then the rest (still available as fallback)
+            unhealthy = [p for p in cloud if p not in available]
+            cloud = available + unhealthy
+
+        return cloud, local
+
+    # ------------------------------------------------------------------
+    # Introspection helpers (unchanged interface)
+    # ------------------------------------------------------------------
+
     def get_available_providers(self) -> list:
         """Get list of available provider names."""
         return self.registry.list_providers()
-    
+
     def get_provider_config(self, provider_name: str):
         """Get configuration for a specific provider."""
         return self.registry.get_provider_config(provider_name)
-    
+
     def get_providers_by_capability(self, capability: str) -> list:
         """Get providers that support a specific capability."""
         return self.registry.get_providers_by_capability(capability)
-    
+
     async def get_quota_status(self, provider_name: str) -> dict:
         """Get quota status for a specific provider."""
         return await self.quota_manager.get_quota_status_for_routing(provider_name)
-    
+
     async def get_all_quota_status(self) -> dict:
         """Get quota status for all providers."""
         providers = self.registry.list_providers()
@@ -147,6 +214,7 @@ class RoutingEngine:
         for provider_name in providers:
             status[provider_name] = await self.quota_manager.get_quota_status_for_routing(provider_name)
         return status
+
 
 # Singleton routing engine using configurable registry and quota manager
 router_engine = RoutingEngine()

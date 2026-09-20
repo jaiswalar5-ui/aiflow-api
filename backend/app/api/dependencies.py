@@ -31,3 +31,25 @@ def get_retry_engine() -> RetryEngine:
         conservative_unknown_retry=getattr(settings, "RETRY_CONSERVATIVE_UNKNOWN", False)
     )
     return RetryEngine(policy=policy)
+
+
+from app.core.failover_engine import FailoverEngine, FailoverPolicy
+
+
+def get_failover_engine() -> FailoverEngine:
+    """Injectable factory for the FailoverEngine singleton.
+
+    Reads FAILOVER_MAX_PROVIDER_ATTEMPTS from settings (default 5).
+    Auth errors and invalid requests do NOT failover by default.
+    Unsupported-model errors DO failover (guarded by capability check).
+    """
+    from app.core.failover_engine import get_failover_engine as _get
+    policy = FailoverPolicy(
+        max_provider_attempts=int(getattr(settings, "FAILOVER_MAX_PROVIDER_ATTEMPTS", 5)),
+        failover_on_auth_error=bool(getattr(settings, "FAILOVER_ON_AUTH_ERROR", False)),
+        failover_on_invalid_request=bool(getattr(settings, "FAILOVER_ON_INVALID_REQUEST", False)),
+        failover_on_unsupported_model=bool(getattr(settings, "FAILOVER_ON_UNSUPPORTED_MODEL", True)),
+    )
+    retry_engine = get_retry_engine()
+    return _get(retry_engine=retry_engine, failover_policy=policy)
+

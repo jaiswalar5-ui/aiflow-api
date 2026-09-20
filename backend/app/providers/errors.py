@@ -5,16 +5,17 @@ import re
 
 class ErrorType(str, Enum):
     """Normalized error type enumeration."""
-    INVALID_REQUEST = "invalid_request"           # Non-retryable
-    AUTHENTICATION_ERROR = "authentication_error"   # Non-retryable
-    RATE_LIMIT_ERROR = "rate_limit_error"          # Retryable + backoff hint
-    QUOTA_EXHAUSTED_ERROR = "quota_exhausted_error" # Retryable after cooldown
-    TIMEOUT_ERROR = "timeout_error"                # Retryable
+    INVALID_REQUEST = "invalid_request"                      # Non-retryable
+    AUTHENTICATION_ERROR = "authentication_error"             # Non-retryable
+    RATE_LIMIT_ERROR = "rate_limit_error"                    # Retryable + backoff hint
+    QUOTA_EXHAUSTED_ERROR = "quota_exhausted_error"          # Retryable after cooldown
+    TIMEOUT_ERROR = "timeout_error"                          # Retryable
     PROVIDER_UNAVAILABLE_ERROR = "provider_unavailable_error"  # Retryable
-    SERVER_ERROR = "server_error"                  # Retryable
-    UNSUPPORTED_MODEL_ERROR = "unsupported_model_error"  # Non-retryable
-    NETWORK_ERROR = "network_error"                # Retryable
-    UNKNOWN_ERROR = "unknown_error"                # Retryable with caution
+    SERVER_ERROR = "server_error"                            # Retryable
+    UNSUPPORTED_MODEL_ERROR = "unsupported_model_error"      # Non-retryable
+    NETWORK_ERROR = "network_error"                          # Retryable
+    UNKNOWN_ERROR = "unknown_error"                          # Retryable with caution
+    ALL_PROVIDERS_EXHAUSTED = "all_providers_exhausted"      # Non-retryable — gateway 503
 
 
 class ProviderError(Exception):
@@ -326,6 +327,25 @@ class UnknownError(ProviderError):
             status_code=status_code,
             response_headers=response_headers,
             response_body=response_body,
+            provider_name=provider_name,
+            request_id=request_id
+        )
+
+
+
+class AllProvidersExhaustedError(ProviderError):
+    """Non-retryable: every configured provider (including local fallback) failed."""
+    def __init__(
+        self,
+        message: str = "All providers exhausted",
+        provider_name: Optional[str] = None,
+        request_id: Optional[str] = None
+    ):
+        super().__init__(
+            message=message,
+            error_type=ErrorType.ALL_PROVIDERS_EXHAUSTED,
+            retryable=False,
+            status_code=503,
             provider_name=provider_name,
             request_id=request_id
         )
