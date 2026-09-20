@@ -236,7 +236,10 @@ class FailoverEngine:
             # ── Per-provider attempt (with retry/backoff from Task 12) ──────
             try:
                 provider_func = func_factory(provider_name)
-                result = await self._retry_engine.execute_with_retry(provider_func)
+                result = await self._retry_engine.execute_with_retry(
+                    provider_func,
+                    request_id=cid,
+                )
                 record.succeeded = True
                 logger.info(
                     "Provider succeeded.",
@@ -245,6 +248,8 @@ class FailoverEngine:
                 return result
 
             except ProviderError as exc:
+                if exc.request_id is None:
+                    exc.request_id = cid
                 record.error_type = exc.error_type.value
                 last_error = exc
 
