@@ -84,7 +84,11 @@ def get_error_type_and_code(exc: Exception):
 
 @app.exception_handler(ProviderError)
 async def provider_exception_handler(request: Request, exc: ProviderError):
-    logger.error(f"Provider exception: {exc}", exc_info=True)
+    logger.error(
+        "Provider exception.",
+        extra={"request_id": getattr(exc, "request_id", None)},
+        exc_info=True,
+    )
     err_type, status_code, retryable = get_error_type_and_code(exc)
     
     error_resp = ErrorResponse(
@@ -94,7 +98,7 @@ async def provider_exception_handler(request: Request, exc: ProviderError):
             code=str(status_code),
             retryable=retryable,
             provider=getattr(exc, 'provider_name', None),
-            request_id=None # Could extract from request if we generate one
+            request_id=getattr(exc, "request_id", None),
         )
     )
     return JSONResponse(status_code=status_code, content=error_resp.model_dump())
