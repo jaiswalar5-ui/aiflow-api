@@ -72,10 +72,11 @@ class RetryEngine:
         self,
         func: Callable[..., Coroutine[Any, Any, T]],
         *args: Any,
+        request_id: Optional[str] = None,
         **kwargs: Any,
     ) -> T:
         """Execute an async function with the configured retry policy."""
-        state = RetryState(self.policy, kwargs.get('request_id'))
+        state = RetryState(self.policy, request_id)
         
         while True:
             try:
