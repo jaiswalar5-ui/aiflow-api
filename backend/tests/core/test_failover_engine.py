@@ -14,6 +14,7 @@ Covers:
 
 import pytest
 import asyncio
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.failover_engine import FailoverEngine, FailoverPolicy
@@ -431,3 +432,63 @@ async def test_correlation_id_preserved_in_logs(engine):
         correlation_id=CID,
     )
     assert result is expected
+
+
+@pytest.mark.asyncio
+async def test_correlation_id_is_passed_to_retry_engine():
+    """The failover chain uses one ID when delegating provider retries."""
+    class RecordingRetryEngine:
+        def __init__(self):
+            self.request_ids = []
+
+        async def execute_with_retry(self, func, *, request_id=None):
+            self.request_ids.append(request_id)
+            return await func()
+
+    retry_engine = RecordingRetryEngine()
+    eng = FailoverEngine(
+        retry_engine=cast(RetryEngine, retry_engine),
+        failover_policy=FailoverPolicy(),
+    )
+    cid = "fixed-correlation-id-retry"
+
+    def func_factory(name: str):
+        async def _call():
+            return _make_response()
+        return _call
+
+    result = await eng.execute_with_failover(
+        func_factory=func_factory,
+        cloud_providers=["provider_a"],
+        local_providers=[],
+        correlation_id=cid,
+    )
+
+    assert result is not None
+    assert retry_engine.request_ids == [cid]
+
+
+@pytest.mark.asyncio
+async def test_failed_provider_error_keeps_correlation_id_and_safe_message(engine):
+    """Provider details stay sanitized while the request ID remains traceable."""
+    cid = "fixed-correlation-id-error"
+
+    def func_factory(name: str):
+        async def _call():
+            raise ServerError(
+                "upstream https://internal.example/key/secret?token=abc12345678901234567",
+                provider_name=name,
+            )
+        return _call
+
+    with pytest.raises(AllProvidersExhaustedError) as exc_info:
+        await engine.execute_with_failover(
+            func_factory=func_factory,
+            cloud_providers=["provider_a"],
+            local_providers=[],
+            correlation_id=cid,
+        )
+
+    assert exc_info.value.request_id == cid
+    assert "internal.example" not in str(exc_info.value)
+    assert "abc12345678901234567" not in str(exc_info.value)
