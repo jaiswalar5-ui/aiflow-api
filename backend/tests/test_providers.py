@@ -3,6 +3,7 @@ from app.providers.registry import ProviderRegistry
 from app.providers.config_registry import ConfigurableProviderRegistry
 from app.providers.mock import MockProvider, MockFailingProvider
 from app.providers.errors import ProviderRateLimitError, ProviderUnsupportedModelError
+from app.core.health_manager import ProviderHealthManager, ProviderHealthState
 from app.models.chat import ChatCompletionRequest, ChatMessage
 from app.services.router import RoutingEngine
 
@@ -80,6 +81,22 @@ async def test_routing_engine_success(mock_request, empty_config_registry):
     response = await engine.route_chat_completion(mock_request, target_provider="success_mock")
     
     assert response.choices[0].message.content == "This is a mock provider response."
+
+
+@pytest.mark.asyncio
+async def test_routing_engine_excludes_unhealthy_pinned_provider(mock_request, empty_config_registry):
+    provider = MockProvider()
+    empty_config_registry.register_provider("unhealthy_mock", provider)
+
+    health_manager = ProviderHealthManager(registry=empty_config_registry)
+    health_manager.get_status("unhealthy_mock").state = ProviderHealthState.UNHEALTHY
+    engine = RoutingEngine(registry=empty_config_registry, health_manager=health_manager)
+
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_info:
+        await engine.route_chat_completion(mock_request, target_provider="unhealthy_mock")
+
+    assert exc_info.value.status_code == 503
 
 @pytest.mark.asyncio
 async def test_routing_engine_unsupported_model(empty_config_registry):

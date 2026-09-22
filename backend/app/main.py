@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize Providers from config
     from app.providers.config_registry import configurable_registry
+    from app.core.health_manager import health_manager
     
     try:
         config_path = settings.PROVIDER_CONFIG_PATH if hasattr(settings, 'PROVIDER_CONFIG_PATH') else None
@@ -28,6 +29,10 @@ async def lifespan(app: FastAPI):
             await configurable_registry.start_hot_reload()
             logger.info("Hot-reload enabled for provider configuration")
             
+        # Start health manager background tasks
+        await health_manager.start()
+        logger.info("Started provider health manager")
+            
     except Exception as e:
         logger.error(f"Failed to initialize provider registry: {e}")
         # Continue with empty registry - will be caught at runtime
@@ -38,7 +43,10 @@ async def lifespan(app: FastAPI):
     
     # Stop hot-reload watcher
     from app.providers.config_registry import configurable_registry
+    from app.core.health_manager import health_manager
+    
     await configurable_registry.stop_hot_reload()
+    await health_manager.stop()
     
     # Close connections here
 

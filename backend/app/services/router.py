@@ -37,10 +37,12 @@ class RoutingEngine:
     failover lifecycle.
     """
 
-    def __init__(self, registry=None, quota_manager=None, failover_engine: Optional[FailoverEngine] = None):
+    def __init__(self, registry=None, quota_manager=None, failover_engine: Optional[FailoverEngine] = None, health_manager=None):
         self.registry = registry or configurable_registry
         self.quota_manager = quota_manager or get_quota_manager()
         self._failover_engine = failover_engine or get_failover_engine()
+        from app.core.health_manager import health_manager as default_health_manager
+        self.health_manager = health_manager or default_health_manager
 
     async def route_chat_completion(
         self,
@@ -67,8 +69,7 @@ class RoutingEngine:
         await self.registry.increment_active_requests()
         try:
             if target_provider:
-                # Pinned: single provider, no failover ordering
-                cloud_providers = [target_provider]
+                cloud_providers = self.health_manager.get_available_providers([target_provider])
                 local_providers: list[str] = []
             else:
                 cloud_providers, local_providers = await self._build_ordered_provider_lists(request)
@@ -173,6 +174,10 @@ class RoutingEngine:
                 local.append(name)
             else:
                 cloud.append(name)
+
+        # Filter out completely UNHEALTHY providers based on health manager
+        cloud = self.health_manager.get_available_providers(cloud)
+        local = self.health_manager.get_available_providers(local)
 
         # Prefer quota-healthy cloud providers but keep all as failover candidates
         try:
