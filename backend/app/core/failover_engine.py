@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from app.core.logging import get_logger
 from app.core.retry_engine import RetryEngine, RetryPolicy
+from app.core.health_manager import health_manager
 from app.providers.errors import (
     AllProvidersExhaustedError,
     AuthenticationError,
@@ -245,6 +246,7 @@ class FailoverEngine:
                     "Provider succeeded.",
                     extra=record.as_log_dict(cid),
                 )
+                await health_manager.report_success(provider_name)
                 return result
 
             except ProviderError as exc:
@@ -252,6 +254,7 @@ class FailoverEngine:
                     exc.request_id = cid
                 record.error_type = exc.error_type.value
                 last_error = exc
+                await health_manager.report_failure(provider_name, exc.error_type)
 
                 # ── Policy: should we failover? ──────────────────────────
                 should_failover, reason = self._evaluate_failover(
