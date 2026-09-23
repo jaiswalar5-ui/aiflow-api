@@ -83,7 +83,7 @@ class RedisQuotaStorage(QuotaStorageBackend):
             key_prefix: Prefix for all keys in Redis
         """
         try:
-            import redis.asyncio as redis
+            import redis.asyncio as redis  # type: ignore  # type: ignore
             self.redis = redis.from_url(redis_url, decode_responses=True)
             self.key_prefix = key_prefix
             self._connected = False

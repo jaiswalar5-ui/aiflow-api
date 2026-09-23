@@ -90,7 +90,7 @@ class TestProviderConfig:
                 adapter_type="app.providers.mock.MockProvider",
                 enabled=True,
                 supported_models=["model-1"],
-                retry_policy={"max_attempts": 15}  # Exceeds max of 10
+                retry_policy={"max_attempts": 15}  # type: ignore
             )
 
 

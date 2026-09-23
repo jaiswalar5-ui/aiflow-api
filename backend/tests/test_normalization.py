@@ -59,7 +59,7 @@ def test_gemini_normalized_response():
     assert resp.model == "gemini-1.5-flash"
     assert resp.provider == "gemini"
     assert resp.choices[0].message.content == "Hello Gemini"
-    assert resp.usage.prompt_tokens == 2
+    assert resp.usage and resp.usage.prompt_tokens == 2
     assert resp.metadata.provider_name == "gemini"
     assert not hasattr(resp, "candidates") # No leak
 

@@ -140,7 +140,8 @@ class ConfigurableProviderRegistry:
             sig = inspect.signature(provider_class.__init__)
             params = sig.parameters
             
-            kwargs = {'timeout_seconds': config.timeout_seconds}
+            from typing import Any
+            kwargs: dict[str, Any] = {'timeout_seconds': config.timeout_seconds}
             if 'api_key' in params and api_key:
                 kwargs['api_key'] = api_key
             if 'supported_models' in params:
@@ -313,7 +314,9 @@ class ConfigurableProviderRegistry:
                     
                     for name, provider in test_providers.items():
                         self._providers[name] = provider
-                        self._configs[name] = new_config.get_provider_by_name(name)
+                        conf = new_config.get_provider_by_name(name)
+                        if conf:
+                            self._configs[name] = conf
                     
                     logger.info("Successfully reloaded provider configuration")
                     
