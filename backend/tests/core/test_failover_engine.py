@@ -492,3 +492,69 @@ async def test_failed_provider_error_keeps_correlation_id_and_safe_message(engin
     assert exc_info.value.request_id == cid
     assert "internal.example" not in str(exc_info.value)
     assert "abc12345678901234567" not in str(exc_info.value)
+
+@pytest.mark.asyncio
+async def test_failover_updates_health_manager(engine):
+    """A real FailoverEngine request must update the injected health manager."""
+    from app.core.health_manager import health_manager, ProviderHealthState
+    from app.models.provider_config import ProviderConfig, HealthCheckSettings
+    import time
+    
+    # Setup mock config in health_manager for provider_a and provider_b
+    config_a = ProviderConfig(
+        name="provider_a",
+        adapter_type="app.providers.mock.MockProvider",
+        supported_models=["model"],
+        health_check_settings=HealthCheckSettings(
+            enabled=True, healthy_threshold=2, unhealthy_threshold=2
+        )
+    )
+    config_b = ProviderConfig(
+        name="provider_b",
+        adapter_type="app.providers.mock.MockProvider",
+        supported_models=["model"],
+        health_check_settings=HealthCheckSettings(
+            enabled=True, healthy_threshold=2, unhealthy_threshold=2
+        )
+    )
+    
+    # We must patch get_provider_config for health manager
+    original_get = health_manager.registry.get_provider_config
+    def mock_get(name):
+        if name == "provider_a": return config_a
+        if name == "provider_b": return config_b
+        return None
+    health_manager.registry.get_provider_config = mock_get
+    
+    # Reset state
+    health_manager.health_states.clear()
+    
+    expected = _make_response("success")
+    
+    def func_factory(name: str):
+        async def _call():
+            if name == "provider_a":
+                raise ServerError("fail")
+            return expected
+        return _call
+
+    # Execute failover which should fail on a and succeed on b
+    await engine.execute_with_failover(
+        func_factory=func_factory,
+        cloud_providers=["provider_a", "provider_b"],
+        local_providers=[],
+        correlation_id="test-integration-1",
+    )
+    
+    snapshot_a = health_manager.get_snapshot("provider_a")
+    snapshot_b = health_manager.get_snapshot("provider_b")
+    
+    assert snapshot_a["consecutive_failures"] == 1
+    assert snapshot_a["last_error_category"] == "server_error"
+    assert snapshot_a["state"] == "degraded"
+    
+    assert snapshot_b["consecutive_successes"] == 1
+    assert snapshot_b["state"] == "healthy"
+    
+    # Restore original config
+    health_manager.registry.get_provider_config = original_get
